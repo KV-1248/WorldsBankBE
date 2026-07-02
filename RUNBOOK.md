@@ -1,5 +1,5 @@
 # WorldsBank — Deployment Runbook
-> Maintained by: Kamau | Server: 174.138.7.233 | Last updated: June 2026
+> Maintained by: Kamau | Domain: worldsbank.cfd | Server: 174.138.7.233 | Last updated: June 2026
 
 ---
 
@@ -29,6 +29,7 @@ worldsbank_db (PostgreSQL:5432)
 All three services run as Docker containers on a single Ubuntu 24.04 VPS.
 Images are published to Docker Hub at kv1248/worldsbank-backend and kv1248/worldsbank-frontend.
 Every push to the Kamau branch triggers a GitHub Actions pipeline that builds and publishes fresh images automatically.
+The app is live at https://worldsbank.cfd with a valid TLS certificate.
 
 ---
 
@@ -58,14 +59,14 @@ ssh -i ~/.ssh/id_ed25519 kamau@174.138.7.233
 ## Environment Variables
 
 All secrets live in `/home/kamau/apps/WorldsBankBE/.env` on the server.
-This file is never committed to git.
+This file is never committed to git. To edit: `nano ~/apps/WorldsBankBE/.env`
 
 | Variable | Description |
 |----------|-------------|
 | POSTGRES_DB | Database name |
 | POSTGRES_USER | Database user |
 | POSTGRES_PASSWORD | Database password |
-| SPRING_DATASOURCE_URL | Full JDBC connection string |
+| SPRING_DATASOURCE_URL | Full JDBC connection string (uses postgres service name) |
 | SPRING_DATASOURCE_USERNAME | DB username for Spring |
 | SPRING_DATASOURCE_PASSWORD | DB password for Spring |
 | JWT_SECRET | JWT signing secret |
@@ -78,18 +79,14 @@ This file is never committed to git.
 
 ## Deploy a New Version
 
-A push to the Kamau branch triggers CI/CD automatically.
+A push to the Kamau branch triggers CI/CD automatically — no manual steps needed.
+
 To deploy manually:
 
 ```bash
-# SSH into server
 ssh -i ~/.ssh/id_ed25519 kamau@174.138.7.233
-
-# Pull latest images
 cd ~/apps/WorldsBankBE
 docker compose pull
-
-# Recreate containers with new images
 docker compose up -d
 ```
 
@@ -100,12 +97,11 @@ docker compose up -d
 Every image is tagged with the git commit SHA. Find the SHA from Docker Hub or GitHub Actions, then:
 
 ```bash
-# Edit docker-compose.yml to pin the image to a specific SHA tag
 nano ~/apps/WorldsBankBE/docker-compose.yml
 # Change: image: kv1248/worldsbank-backend:latest
 # To:     image: kv1248/worldsbank-backend:<commit-sha>
 
-docker compose up -d
+docker compose up -d --force-recreate worldsbank
 ```
 
 ---
@@ -132,16 +128,16 @@ docker compose down && docker compose up -d
 ```bash
 cd ~/apps/WorldsBankBE
 
-# Follow live logs for backend
+# Follow live logs — backend
 docker compose logs -f worldsbank
 
-# Last 50 lines from backend
+# Last 50 lines — backend
 docker compose logs worldsbank --tail 50
 
-# Last 50 lines from frontend
+# Last 50 lines — frontend
 docker compose logs frontend --tail 50
 
-# All services
+# All services live
 docker compose logs -f
 ```
 
@@ -150,16 +146,19 @@ docker compose logs -f
 ## Check Service Health
 
 ```bash
-# See running containers and status
-docker compose ps
+# Container status
+cd ~/apps/WorldsBankBE && docker compose ps
 
-# Test backend API
-curl http://localhost:8080/v3/api-docs
+# Test backend API directly
+curl -s http://localhost:8080/v3/api-docs | head -c 100
 
-# Test nginx routing
-curl http://localhost/api/v1/auth/login -X POST \
-  -H "Content-Type: application/json" \
+# Test nginx routing to backend
+curl -s https://worldsbank.cfd/api/v1/auth/login \
+  -X POST -H "Content-Type: application/json" \
   -d '{"email":"test@test.com","password":"test"}'
+
+# Test frontend
+curl -s https://worldsbank.cfd | head -c 100
 ```
 
 ---
@@ -167,46 +166,50 @@ curl http://localhost/api/v1/auth/login -X POST \
 ## nginx Operations
 
 ```bash
-# Test nginx config before applying
+# Test config before applying
 sudo nginx -t
 
-# Reload nginx (no downtime)
+# Reload without downtime
 sudo systemctl reload nginx
 
-# View nginx config
+# View config
 cat /etc/nginx/sites-available/worldsbank
 
-# View nginx logs
+# Live access log
 sudo tail -f /var/log/nginx/access.log
+
+# Live error log
 sudo tail -f /var/log/nginx/error.log
 ```
 
 ---
 
-## TLS Certificate (pending domain)
-
-Once domain is configured:
+## TLS Certificate
 
 ```bash
-# Issue certificate
-sudo certbot --nginx -d yourdomain.com
+# Check certificate status and expiry
+sudo certbot certificates
 
-# Test renewal
+# Test renewal (safe — no changes made)
 sudo certbot renew --dry-run
 
-# Check certificate expiry
-sudo certbot certificates
+# Force renew if needed
+sudo certbot renew --force-renewal
+
+# Reload nginx after manual renewal
+sudo systemctl reload nginx
 ```
 
-UptimeRobot is configured to alert on certificate expiry before it occurs.
+UptimeRobot is configured to alert on downtime and certificate expiry before it occurs.
 
 ---
 
 ## Monitoring
 
-- Uptime monitor: UptimeRobot — http://174.138.7.233
-- Alerts: email on downtime and certificate expiry
-- Dashboard: dashboard.uptimerobot.com
+- Live site: https://worldsbank.cfd
+- Uptime monitor: UptimeRobot — https://dashboard.uptimerobot.com
+- Alerts: email on downtime
+- Server IP: 174.138.7.233
 
 ---
 
@@ -220,9 +223,9 @@ UptimeRobot is configured to alert on certificate expiry before it occurs.
 | 03 | Docker Compose orchestration | ✅ |
 | 04 | Images published to Docker Hub | ✅ |
 | 05 | Deployed to production server | ✅ |
-| 06 | Domain and DNS | ⏳ awaiting domain |
-| 07 | nginx reverse proxy | ✅ (IP only, update server_name when domain arrives) |
-| 08 | TLS with Let's Encrypt | ⏳ awaiting domain |
+| 06 | Domain and DNS | ✅ worldsbank.cfd |
+| 07 | nginx reverse proxy | ✅ |
+| 08 | TLS with Let's Encrypt | ✅ |
 | 09 | CI/CD with GitHub Actions | ✅ |
 | 10 | Monitoring and uptime | ✅ |
 | 11 | Runbook | ✅ |
